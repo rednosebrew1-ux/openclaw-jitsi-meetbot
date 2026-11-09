@@ -1,0 +1,22 @@
+services:
+  voice:
+    build: .
+    env_file: .env
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./data:/app/data      # Whisper and Piper models are downloaded here once
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # reach OpenClaw running on this computer
+    restart: unless-stopped
+
+  bridge:
+    build: ./bridge
+    platform: linux/amd64
+    env_file: .env
+    environment:
+      VOICE_URL: ws://voice:8090/bridge
+    depends_on:
+      - voice
+    # The bridge exits after each meeting (the Zoom SDK handles one per process); this brings it back.
+    restart: unless-stopped
