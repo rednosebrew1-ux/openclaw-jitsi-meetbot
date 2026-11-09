@@ -34,7 +34,7 @@ cmd="${1:-}"
 [ $# -gt 0 ] && shift
 case "$cmd" in
   call)   api POST /api/call "$(json reason "${1:?usage: zoom.sh call \"reason\"}")" ;;
-  join)   api POST /api/join "$(json link "${1:-}" reason "${2:-}")" ;;
+  join)   api POST /api/join "$(json link "${1:-}" reason "${2:-}" obf_token "${ZOOM_OBF_TOKEN:-}")" ;;
   wait)   api GET "/api/calls/${1:?usage: zoom.sh wait ID}?wait=1&timeout=1800" "" --max-time 1860 ;;
   hangup) api POST "/api/calls/${1:?usage: zoom.sh hangup ID}/hangup" ;;
   status) api GET /api/status ;;

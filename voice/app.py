@@ -207,7 +207,7 @@ class ZoomCallerApp:
         if self.call is call:
             self.call = None
 
-    async def start_call(self, kind, number, passcode, join_url="", reason=None):
+    async def start_call(self, kind, number, passcode, join_url="", reason=None, obf_token=""):
         """Send the bot into a meeting. Raises web.HTTPException if it can't."""
         if self.bridge is None or self.bridge.closed:
             raise web.HTTPServiceUnavailable(text=json.dumps({"error": "the Zoom bridge isn't connected"}),
@@ -225,6 +225,7 @@ class ZoomCallerApp:
         await self.send_bridge({
             "type": "join", "meeting_number": number, "passcode": passcode,
             "display_name": self.cfg.ai_name, "recording_token": token or "",
+            "obf_token": obf_token or self.cfg.zoom_obf_token,
         })
         log.info("[%s] joining meeting %s (%s)", call.id, number, kind)
         return call
@@ -275,7 +276,8 @@ class ZoomCallerApp:
             return self._error(400, str(e))
         if not passcode and self.zoom:
             passcode = await self._lookup_passcode(number)
-        call = await self.start_call("join", number, passcode, join_url, (body.get("reason") or "").strip() or None)
+        call = await self.start_call("join", number, passcode, join_url, (body.get("reason") or "").strip() or None,
+                                     obf_token=(body.get("obf_token") or "").strip())
         return web.json_response(call.info())
 
     async def _lookup_passcode(self, number):

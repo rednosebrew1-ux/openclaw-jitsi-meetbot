@@ -132,6 +132,7 @@ def test_joins_after_login_with_the_right_settings():
     p = h.zoom.join_param.param
     assert (p.meetingNumber, p.psw, p.userName) == (12345678901, "abc", "Max")
     assert p.app_privilege_token == "rec-token"
+    assert not hasattr(p, "onBehalfToken")  # only set when given
     assert p.isMyVoiceInMix is False and p.isAudioRawDataStereo is False
     assert p.eAudioRawdataSamplingRate == "32k" and h.zoom.join_param.userType == "anon"
     assert h.called("audio_settings", "EnableAutoJoinAudio") == [("audio_settings", "EnableAutoJoinAudio", (True,))]
@@ -240,3 +241,10 @@ def test_sdk_jwt():
     assert claims["iat"] == 1_700_000_000 - 30 and claims["tokenExp"] == claims["exp"] > claims["iat"]
     with pytest.raises(jwt.InvalidSignatureError):
         jwt.decode(token, "other-secret-for-tests-0123456789abc", algorithms=["HS256"], options={"verify_exp": False})
+
+
+def test_passes_the_on_behalf_token():
+    h = Harness()
+    h.login()
+    h.bot.handle(dict(JOIN, obf_token="obf-token"))
+    assert h.zoom.join_param.param.onBehalfToken == "obf-token"

@@ -102,6 +102,9 @@ class Settings:
     zoom_client_secret: str = field(default_factory=lambda: _env("ZOOM_CLIENT_SECRET"))
     zoom_api_url: str = field(default_factory=lambda: _env("ZOOM_API_URL", "https://api.zoom.us/v2"))
     zoom_oauth_url: str = field(default_factory=lambda: _env("ZOOM_OAUTH_URL", "https://zoom.us/oauth/token"))
+    # "On behalf of" token, needed to join meetings hosted outside your Zoom account (Zoom has
+    # required it since March 2026). It expires after about two hours; you can also pass one per call.
+    zoom_obf_token: str = field(default_factory=lambda: _env("ZOOM_OBF_TOKEN"))
     # Optional webhook: join automatically when one of these meetings starts.
     zoom_webhook_secret: str = field(default_factory=lambda: _env("ZOOM_WEBHOOK_SECRET"))
     auto_join_meetings: str = field(default_factory=lambda: _env("AUTO_JOIN_MEETINGS"))

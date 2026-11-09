@@ -107,6 +107,18 @@ Set `ZOOM_WEBHOOK_SECRET` and `AUTO_JOIN_MEETINGS` (see `.env.example`). Then, i
 add an Event Subscription for **Meeting has started** pointing at `https://<your host>/zoom/webhook`.
 This needs the voice server reachable from the internet, for example through a tunnel.
 
+## Running the bridge on another computer
+
+Everything can run on one Intel/AMD computer (Linux, Windows, or an Intel Mac). If yours is an
+Apple Silicon Mac and the bridge misbehaves under emulation, run just the bridge on any x86_64
+Linux machine (an old PC, a mini PC, or a small cloud server), and keep the rest on the Mac:
+
+1. On the Mac, run everything as usual except the bridge: `docker compose up --build voice`.
+2. On the x86_64 machine, clone this repo, copy the same `.env`, and add
+   `VOICE_URL=ws://<the Mac's address>:8090/bridge`.
+   Use a private network such as [Tailscale](https://tailscale.com) rather than the open internet.
+3. Start only the bridge there: `docker compose up --build --no-deps bridge`.
+
 ## API
 
 All endpoints need `Authorization: Bearer <API_TOKEN>`.
@@ -122,10 +134,13 @@ All endpoints need `Authorization: Bearer <API_TOKEN>`.
 ## Limits
 
 - **One call at a time.** The Zoom SDK handles one meeting per bridge.
-- **Your own meetings only.** Since March 2026, Zoom requires Meeting SDK bots joining meetings
-  outside the app's account to carry an "on behalf of" token, which this project doesn't do.
-- **Apple Silicon Macs** run the bridge under emulation (the SDK is x86_64 only). It only moves
-  audio, so that's fine; the voice server runs natively.
+- **Other people's meetings need a token.** Since March 2026, Zoom requires Meeting SDK bots joining
+  meetings outside the app's account to carry an "on behalf of" token. Put one in `ZOOM_OBF_TOKEN`,
+  or pass `obf_token` to `/api/join`. This project doesn't fetch it for you yet, and it expires after
+  about two hours.
+- **The bridge needs an x86_64 (Intel/AMD) computer.** The Zoom Meeting SDK for Linux is built for
+  x86_64. On an Apple Silicon Mac, Docker runs it under emulation, which Zoom says it doesn't support
+  and which may be unreliable. See "Running the bridge on another computer" below.
 - **Not yet tested against a live Zoom meeting.** The voice server and the bridge's logic are
   covered by tests with fakes (`python -m pytest tests`), and the bridge uses the same SDK calls
   as the bindings' sample program. If something goes wrong in a real meeting, the bridge logs say

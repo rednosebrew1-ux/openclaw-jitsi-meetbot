@@ -63,6 +63,7 @@ class Env:
         cfg.zoom_webhook_secret = ""
         cfg.auto_join_meetings = ""
         cfg.notify_url = ""
+        cfg.zoom_obf_token = ""
         if zoom_api:
             runner, zoom_base = await serve(fake_zoom_api_app(self.zoom_log))
             self.runners.append(runner)
@@ -177,7 +178,8 @@ def test_ai_calls_you():
 
 
 async def _ai_calls_you_without_zoom_api():
-    env = await Env().start(personal_meeting_url="https://zoom.us/j/1234567890?pwd=abcDEF")
+    env = await Env().start(personal_meeting_url="https://zoom.us/j/1234567890?pwd=abcDEF",
+                            zoom_obf_token="obf-from-settings")
     try:
         bridge = await env.bridge()
         status, call = await env.post("/api/call", {"reason": "Reminder"})
@@ -186,6 +188,7 @@ async def _ai_calls_you_without_zoom_api():
         assert await wait_for(lambda: bridge.commands_of("join"))
         join = bridge.commands_of("join")[0]
         assert (join["meeting_number"], join["passcode"], join["recording_token"]) == ("1234567890", "abcDEF", "")
+        assert join["obf_token"] == "obf-from-settings"
     finally:
         await env.stop()
 
@@ -216,11 +219,13 @@ async def _you_call_it():
         bridge = await env.bridge()
         status, body = await env.post("/api/join", {"link": "not a link"})
         assert status == 400
-        status, call = await env.post("/api/join", {"link": "https://us05web.zoom.us/j/12345678901?pwd=abc"})
+        status, call = await env.post("/api/join", {"link": "https://us05web.zoom.us/j/12345678901?pwd=abc",
+                                                    "obf_token": "obf-for-this-call"})
         assert status == 200, call
         assert await wait_for(lambda: bridge.commands_of("join"))
         join = bridge.commands_of("join")[0]
         assert (join["meeting_number"], join["passcode"]) == ("12345678901", "abc")
+        assert join["obf_token"] == "obf-for-this-call"
 
         # Say something 2 s in, after the greeting.
         bridge.start_audio(clips=[(2.0, load_speech())])

@@ -129,6 +129,9 @@ class ZoomBot:
         if message.get("recording_token"):
             # Lets the bot hear the meeting without asking the host for recording permission.
             p.app_privilege_token = message["recording_token"]
+        if message.get("obf_token"):
+            # "On behalf of" token: required by Zoom to join meetings hosted outside your account.
+            p.onBehalfToken = message["obf_token"]
         result = self.meeting_service.Join(join_param)
         if result != z.SDKERR_SUCCESS:
             self.emit({"type": "ended", "failed": True, "reason": f"couldn't join (error {result})"})

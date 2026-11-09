@@ -15,7 +15,8 @@ services:
     platform: linux/amd64
     env_file: .env
     environment:
-      VOICE_URL: ws://voice:8090/bridge
+      # Running the bridge on another computer? Set VOICE_URL in .env (see the README).
+      VOICE_URL: ${VOICE_URL:-ws://voice:8090/bridge}
     depends_on:
       - voice
     # The bridge exits after each meeting (the Zoom SDK handles one per process); this brings it back.
