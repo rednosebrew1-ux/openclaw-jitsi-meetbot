@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Zoom calls with your AI, through a self-hosted zoom-ai-caller.
+# Zoom calls with your AI, through a self-hosted openclaw-zoom-bot.
 #   zoom.sh call "reason"      the AI opens a meeting and joins; prints the join link
 #   zoom.sh join [link]        the AI joins your meeting (your personal meeting if no link)
 #   zoom.sh wait ID            wait for the call to end; prints status and transcript
@@ -7,21 +7,21 @@
 #   zoom.sh status             is the bridge connected, is a call going
 set -eu
 
-# Settings come from the environment, or from ~/.config/zoom-ai-caller/skill.env
+# Settings come from the environment, or from ~/.config/openclaw-zoom-bot/skill.env
 # (OpenClaw blocks secret-looking env vars from reaching skills).
-CONFIG="${ZOOM_CALLER_CONFIG:-$HOME/.config/zoom-ai-caller/skill.env}"
-if [ -z "${ZOOM_CALLER_TOKEN:-}" ] && [ -f "$CONFIG" ]; then
+CONFIG="${ZOOM_BOT_CONFIG:-$HOME/.config/openclaw-zoom-bot/skill.env}"
+if [ -z "${ZOOM_BOT_TOKEN:-}" ] && [ -f "$CONFIG" ]; then
   # shellcheck disable=SC1090
   . "$CONFIG"
 fi
-ZOOM_CALLER_URL="${ZOOM_CALLER_URL:-http://localhost:8090}"
-: "${ZOOM_CALLER_TOKEN:?no token: put ZOOM_CALLER_TOKEN=... (the server's API_TOKEN) in $CONFIG}"
+ZOOM_BOT_URL="${ZOOM_BOT_URL:-http://localhost:8090}"
+: "${ZOOM_BOT_TOKEN:?no token: put ZOOM_BOT_TOKEN=... (the server's API_TOKEN) in $CONFIG}"
 
 api() {  # api METHOD PATH [JSON] [curl options...]
   method=$1 path=$2 body=${3:-}
   shift 2; [ $# -gt 0 ] && shift
-  curl -sS --fail-with-body -X "$method" "$ZOOM_CALLER_URL$path" \
-    -H "Authorization: Bearer $ZOOM_CALLER_TOKEN" -H "Content-Type: application/json" \
+  curl -sS --fail-with-body -X "$method" "$ZOOM_BOT_URL$path" \
+    -H "Authorization: Bearer $ZOOM_BOT_TOKEN" -H "Content-Type: application/json" \
     ${body:+-d "$body"} "$@"
   echo
 }

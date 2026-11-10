@@ -5,7 +5,7 @@ description: Talk with the user by voice on Zoom. Use when the user asks you to 
 
 # Zoom call
 
-A voice bot (the user's self-hosted zoom-ai-caller) joins a Zoom meeting and talks with the
+A voice bot (the user's self-hosted openclaw-zoom-bot) joins a Zoom meeting and talks with the
 user. It thinks with this same OpenClaw agent, so on the call it can do anything you can.
 You get the transcript when the call ends.
 
@@ -14,12 +14,12 @@ You get the transcript when the call ends.
 Put the server's `API_TOKEN` in a private file the script reads:
 
 ```bash
-mkdir -p ~/.config/zoom-ai-caller
-printf 'ZOOM_CALLER_TOKEN=%s\n' 'PASTE_API_TOKEN' > ~/.config/zoom-ai-caller/skill.env
-chmod 600 ~/.config/zoom-ai-caller/skill.env
+mkdir -p ~/.config/openclaw-zoom-bot
+printf 'ZOOM_BOT_TOKEN=%s\n' 'PASTE_API_TOKEN' > ~/.config/openclaw-zoom-bot/skill.env
+chmod 600 ~/.config/openclaw-zoom-bot/skill.env
 ```
 
-Add `ZOOM_CALLER_URL=http://...` to the same file if the server isn't at `http://localhost:8090`.
+Add `ZOOM_BOT_URL=http://...` to the same file if the server isn't at `http://localhost:8090`.
 
 ## Call the user
 
@@ -60,7 +60,7 @@ connected and whether a call is already going (only one at a time).
 - Put everything the voice bot needs in the reason: what happened, what to ask, what decision
   is needed. It doesn't see this chat.
 - If the status is `missed`, don't call again right away. Send a message instead.
-- If it fails with "the Zoom bridge isn't connected", tell the user the zoom-ai-caller
+- If it fails with "the Zoom bridge isn't connected", tell the user the openclaw-zoom-bot
   containers aren't running.
 - After a completed call, act on what the user said in the transcript and confirm in chat
   what you did.

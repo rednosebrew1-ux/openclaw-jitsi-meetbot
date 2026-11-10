@@ -6,7 +6,7 @@ import sys
 
 from aiohttp import web
 
-from .app import ZoomCallerApp
+from .app import ZoomBotApp
 from .config import settings
 from .speech import make_stt, make_tts
 
@@ -45,7 +45,7 @@ def main():
         log.warning("Neither PERSONAL_MEETING_URL nor the Zoom API settings are set: the AI can join "
                     "meetings you give it a link to, but can't call you.")
     stt, tts = make_stt(settings), make_tts(settings)
-    app = ZoomCallerApp(settings, stt, tts).make_app()
+    app = ZoomBotApp(settings, stt, tts).make_app()
     log.info("Listening on %s:%s; waiting for the Zoom bridge to connect", settings.host, settings.port)
     web.run_app(app, host=settings.host, port=settings.port, print=None)
 

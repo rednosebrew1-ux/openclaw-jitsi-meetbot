@@ -1,4 +1,4 @@
-# Zoom AI Caller
+# OpenClaw Zoom Bot
 
 Talk with your AI on Zoom, in both directions:
 
@@ -89,9 +89,9 @@ The first start downloads the Whisper and Piper models into `./data`. When you s
 
 ```bash
 cp -r skills/openclaw/zoom-call ~/.openclaw/skills/
-mkdir -p ~/.config/zoom-ai-caller
-printf 'ZOOM_CALLER_TOKEN=%s\n' '<your API_TOKEN>' > ~/.config/zoom-ai-caller/skill.env
-chmod 600 ~/.config/zoom-ai-caller/skill.env
+mkdir -p ~/.config/openclaw-zoom-bot
+printf 'ZOOM_BOT_TOKEN=%s\n' '<your API_TOKEN>' > ~/.config/openclaw-zoom-bot/skill.env
+chmod 600 ~/.config/openclaw-zoom-bot/skill.env
 ```
 
 Now tell your agent "call me on Zoom" or "join my Zoom".

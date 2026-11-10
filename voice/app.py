@@ -147,7 +147,7 @@ class Call:
         log.info("[%s] call %s after %.0fs", self.id, status, self.ended_at - self.created)
 
 
-class ZoomCallerApp:
+class ZoomBotApp:
     def __init__(self, cfg, stt, tts):
         self.cfg, self.stt, self.tts = cfg, stt, tts
         self.zoom = ZoomAPI(cfg) if cfg.zoom_api_enabled else None

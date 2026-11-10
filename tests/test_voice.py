@@ -17,7 +17,7 @@ import pytest
 from aiohttp import web
 
 from tests.fakes import FakeBridge, FakeSTT, FakeTTS, fake_llm_app, fake_notify_app, fake_zoom_api_app
-from voice.app import Call, ZoomCallerApp
+from voice.app import Call, ZoomBotApp
 from voice.audio import resample_pcm
 from voice.config import Settings
 from voice.zoom import parse_meeting, url_validation_response, verify_webhook
@@ -76,7 +76,7 @@ class Env:
         for key, value in overrides.items():
             setattr(cfg, key, value)
         self.stt, self.tts = FakeSTT(), FakeTTS(max_seconds=tts_max_seconds)
-        self.app = ZoomCallerApp(cfg, self.stt, self.tts)
+        self.app = ZoomBotApp(cfg, self.stt, self.tts)
         runner, self.base = await serve(self.app.make_app())
         self.runners.append(runner)
         self.http = aiohttp.ClientSession()
