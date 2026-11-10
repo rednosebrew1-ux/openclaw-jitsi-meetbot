@@ -58,8 +58,8 @@ Choose one:
 ### 3. Configure and start
 
 ```bash
-git clone https://github.com/rednosebrew1-ux/zoom-ai-caller.git
-cd zoom-ai-caller
+git clone https://github.com/rednosebrew1-ux/openclaw-zoom-bot.git
+cd openclaw-zoom-bot
 cp .env.example .env
 ```
 
