@@ -1,4 +1,4 @@
-"""Stand-ins for STT, TTS, the LLM, the Zoom bridge, the Zoom API and a push service."""
+"""Stand-ins for STT, TTS, the LLM, the Jitsi bridge and a push service."""
 
 import asyncio
 import json
@@ -9,7 +9,7 @@ import numpy as np
 from aiohttp import web
 
 RATE = 32000
-CHUNK = RATE // 100 * 2  # 10 ms of 32 kHz 16-bit mono, like the Zoom SDK delivers
+CHUNK = RATE // 100 * 2  # 10 ms of 32 kHz 16-bit mono
 
 
 class FakeSTT:
@@ -71,42 +71,6 @@ def fake_llm_app(requests, behavior=None):
     return app
 
 
-def fake_zoom_api_app(log):
-    """Zoom's OAuth and REST endpoints, just enough for the caller. Records requests in `log`."""
-
-    async def token(request):
-        log.append(("token", dict(request.query), request.headers.get("Authorization")))
-        return web.json_response({"access_token": "zoom-access", "expires_in": 3600})
-
-    def authed(request):
-        return request.headers.get("Authorization") == "Bearer zoom-access"
-
-    async def create(request):
-        if not authed(request):
-            return web.json_response({"message": "Invalid access token."}, status=401)
-        body = await request.json()
-        log.append(("create", body))
-        return web.json_response({"id": 98765432101, "password": "s3cret",
-                                  "join_url": "https://us05web.zoom.us/j/98765432101?pwd=enc"}, status=201)
-
-    async def get_meeting(request):
-        log.append(("get", request.match_info["id"]))
-        return web.json_response({"id": int(request.match_info["id"]), "password": "looked-up"})
-
-    async def recording_token(request):
-        if not authed(request):
-            return web.json_response({"message": "Invalid access token."}, status=401)
-        log.append(("recording_token", request.match_info["id"]))
-        return web.json_response({"token": "rec-token", "expire_in": 7200})
-
-    app = web.Application()
-    app.router.add_post("/oauth/token", token)
-    app.router.add_post("/v2/users/me/meetings", create)
-    app.router.add_get("/v2/meetings/{id}", get_meeting)
-    app.router.add_get("/v2/meetings/{id}/jointoken/local_recording", recording_token)
-    return app
-
-
 def fake_notify_app(log):
     async def notify(request):
         log.append({"text": (await request.read()).decode(), "click": request.headers.get("Click")})
@@ -118,10 +82,10 @@ def fake_notify_app(log):
 
 
 class FakeBridge:
-    """Plays the Zoom bridge: connects to /bridge, records commands, streams meeting audio.
+    """Plays the Jitsi bridge: connects to /bridge, records commands, streams room audio.
 
-    The meeting audio is silence plus any `clips` [(start_s, int16 samples at 32 kHz)],
-    paced in real time in 10 ms chunks, like the Zoom SDK.
+    The room audio is silence plus any `clips` [(start_s, int16 samples at 32 kHz)],
+    paced in real time in 10 ms chunks.
     """
 
     def __init__(self, base, token):
@@ -153,7 +117,7 @@ class FakeBridge:
         await self.ws.send_json(event)
 
     async def join_meeting(self, others=1, recording=True):
-        """Report what the SDK reports once it's in the meeting."""
+        """Report what the bridge reports once it's in the room."""
         await self.send(type="status", status="joining")
         await self.send(type="status", status="in_meeting")
         await self.send(type="recording", allowed=recording)

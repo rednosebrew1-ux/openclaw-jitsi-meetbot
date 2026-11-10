@@ -1,3 +1,0 @@
-zoom-meeting-sdk==0.0.28
-aiohttp>=3.9
-pyjwt>=2.8

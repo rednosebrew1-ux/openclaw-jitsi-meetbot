@@ -53,7 +53,7 @@ class Settings:
     llm_model: str = field(default_factory=lambda: _env("LLM_MODEL", "openclaw:main"))
     system_prompt: str = field(default_factory=lambda: _env(
         "SYSTEM_PROMPT",
-        "You are a friendly voice assistant talking with someone on a live Zoom call. "
+        "You are a friendly voice assistant talking with someone on a live video call. "
         "Speak naturally in short sentences, one to three at a time. Never use lists, "
         "markdown, emojis, or URLs, since everything you say is read aloud. "
         "When the conversation is clearly over and you've said goodbye, end your "
@@ -84,33 +84,15 @@ class Settings:
     # Calls
     ai_name: str = field(default_factory=lambda: _env("AI_NAME", "Assistant"))
     greeting: str = field(default_factory=lambda: _env("GREETING", "Hey, it's your assistant. What's up?"))
-    # How long the bot waits in a meeting for you to show up before giving up.
+    # How long the bot waits in a room for you to show up before giving up.
     join_timeout: float = field(default_factory=lambda: _float("JOIN_TIMEOUT", "180"))
-    # Said when the bot can't hear the meeting yet (the host hasn't allowed it to record).
-    permission_prompt: str = field(default_factory=lambda: _env(
-        "PERMISSION_PROMPT",
-        "Hi, I'm here, but I can't hear you yet. Please allow me to record so I can listen.",
-    ))
 
-    # Zoom: the meeting the bot uses when there's no Zoom API access, or when you say "join my meeting".
-    # Paste your personal meeting link (it includes the passcode).
-    personal_meeting_url: str = field(default_factory=lambda: _env("PERSONAL_MEETING_URL"))
-    # Always-on: the bot stays in this meeting all the time; join it whenever you want to talk.
-    # "Call me" sends you this link instead of making a new meeting.
+    # Your Jitsi Meet server, e.g. https://localhost:8443 or https://meet.example.com.
+    # Room names you give the bot ("AssistantRoom") are rooms on this server.
+    jitsi_url: str = field(default_factory=lambda: _env("JITSI_URL").rstrip("/"))
+    # Always-on: the bot stays in this room all the time; join it whenever you want to talk.
+    # "Call me" sends you this link instead of making a new room.
     always_on_meeting_url: str = field(default_factory=lambda: _env("ALWAYS_ON_MEETING_URL"))
-    # Optional Server-to-Server OAuth app: lets the bot create a fresh meeting for every call and
-    # listen without asking the host for recording permission.
-    zoom_account_id: str = field(default_factory=lambda: _env("ZOOM_ACCOUNT_ID"))
-    zoom_client_id: str = field(default_factory=lambda: _env("ZOOM_CLIENT_ID"))
-    zoom_client_secret: str = field(default_factory=lambda: _env("ZOOM_CLIENT_SECRET"))
-    zoom_api_url: str = field(default_factory=lambda: _env("ZOOM_API_URL", "https://api.zoom.us/v2"))
-    zoom_oauth_url: str = field(default_factory=lambda: _env("ZOOM_OAUTH_URL", "https://zoom.us/oauth/token"))
-    # "On behalf of" token, needed to join meetings hosted outside your Zoom account (Zoom has
-    # required it since March 2026). It expires after about two hours; you can also pass one per call.
-    zoom_obf_token: str = field(default_factory=lambda: _env("ZOOM_OBF_TOKEN"))
-    # Optional webhook: join automatically when one of these meetings starts.
-    zoom_webhook_secret: str = field(default_factory=lambda: _env("ZOOM_WEBHOOK_SECRET"))
-    auto_join_meetings: str = field(default_factory=lambda: _env("AUTO_JOIN_MEETINGS"))
 
     # Optional: POST the join link here when the AI calls you, e.g. an ntfy.sh topic URL
     # for a push notification on your phone.
@@ -124,20 +106,6 @@ class Settings:
     vad_ratio: float = field(default_factory=lambda: _float("VAD_RATIO", "3"))
     silence_ms: float = field(default_factory=lambda: _float("SILENCE_MS", "700"))
     barge_in_ms: float = field(default_factory=lambda: _float("BARGE_IN_MS", "300"))
-
-    @property
-    def zoom_api_enabled(self):
-        return bool(self.zoom_account_id and self.zoom_client_id and self.zoom_client_secret)
-
-    def auto_join_list(self):
-        """AUTO_JOIN_MEETINGS as {meeting_id: passcode or ""}. Entries are "id" or "id:passcode"."""
-        out = {}
-        for entry in filter(None, (e.strip() for e in self.auto_join_meetings.split(","))):
-            number, _, passcode = entry.partition(":")
-            number = re.sub(r"\D", "", number)
-            if number:
-                out[number] = passcode.strip()
-        return out
 
 
 load_dotenv()

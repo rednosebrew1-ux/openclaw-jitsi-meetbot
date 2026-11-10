@@ -227,7 +227,7 @@ class Conversation:
 
     async def _speak_llm(self):
         spoken, hang_up = [], False
-        deltas = stream_chat(self.cfg, self._messages(), user=f"zoom-{self.call_id}")
+        deltas = stream_chat(self.cfg, self._messages(), user=f"meetbot-{self.call_id}")
         sentences = stream_sentences(speakable(deltas))
         try:
             first = await self._first_sentence(sentences)

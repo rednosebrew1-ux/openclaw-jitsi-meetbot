@@ -1,3 +1,4 @@
+# For Linux servers. On a Mac, use ./start.sh instead: everything runs natively.
 services:
   voice:
     build: .
@@ -11,13 +12,14 @@ services:
     restart: unless-stopped
 
   bridge:
-    build: ./bridge
-    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: jitsi_bridge/Dockerfile
     env_file: .env
     environment:
-      # Running the bridge on another computer? Set VOICE_URL in .env (see the README).
       VOICE_URL: ${VOICE_URL:-ws://voice:8090/bridge}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # reach a Jitsi server running on this computer
     depends_on:
       - voice
-    # The bridge exits after each meeting (the Zoom SDK handles one per process); this brings it back.
     restart: unless-stopped

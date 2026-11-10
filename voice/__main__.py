@@ -6,7 +6,7 @@ import sys
 
 from aiohttp import web
 
-from .app import ZoomBotApp
+from .app import MeetBotApp
 from .config import settings
 from .speech import make_stt, make_tts
 
@@ -37,16 +37,14 @@ def main():
 
     log.info("AI brain: %s (model %s, %s)", settings.llm_url, settings.llm_model,
              "with API key" if settings.llm_api_key else "no API key")
-    if settings.zoom_api_enabled:
-        log.info("Zoom API: on (a new meeting for every call, no recording prompt)")
-    elif settings.personal_meeting_url:
-        log.info("Zoom API: off; calls use your personal meeting (PERSONAL_MEETING_URL)")
-    else:
-        log.warning("Neither PERSONAL_MEETING_URL nor the Zoom API settings are set: the AI can join "
-                    "meetings you give it a link to, but can't call you.")
+    if settings.always_on_meeting_url:
+        log.info("Always-on room: %s", settings.always_on_meeting_url)
+    elif not settings.jitsi_url:
+        log.warning("Neither JITSI_URL nor ALWAYS_ON_MEETING_URL is set: the AI can join rooms you give it "
+                    "a full link to, but can't call you.")
     stt, tts = make_stt(settings), make_tts(settings)
-    app = ZoomBotApp(settings, stt, tts).make_app()
-    log.info("Listening on %s:%s; waiting for the Zoom bridge to connect", settings.host, settings.port)
+    app = MeetBotApp(settings, stt, tts).make_app()
+    log.info("Listening on %s:%s; waiting for the Jitsi bridge to connect", settings.host, settings.port)
     web.run_app(app, host=settings.host, port=settings.port, print=None)
 
 

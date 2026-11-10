@@ -9,7 +9,7 @@ import numpy as np
 
 log = logging.getLogger(__name__)
 
-ZOOM_RATE = 32000      # the bridge sends and receives 32 kHz 16-bit mono
+BRIDGE_RATE = 32000      # the bridge sends and receives 32 kHz 16-bit mono
 FRAME_MS = 20
 
 
@@ -29,7 +29,7 @@ def resample_pcm(pcm, src_rate, dst_rate):
 class InputResampler:
     """Turns a stream of 32 kHz chunks (any size) into 20 ms frames of 16 kHz PCM."""
 
-    def __init__(self, src_rate=ZOOM_RATE, rate=16000):
+    def __init__(self, src_rate=BRIDGE_RATE, rate=16000):
         self.src_rate, self.rate = src_rate, rate
         self._resampler = av.AudioResampler(format="s16", layout="mono", rate=rate)
         self._pending = bytearray()
@@ -54,11 +54,11 @@ class InputResampler:
 class Speaker:
     """Plays queued PCM by sending 20 ms frames to `sink` in real time.
 
-    Pacing on this side (instead of handing Zoom the whole reply at once) means a
+    Pacing on this side (instead of handing the browser the whole reply at once) means a
     barge-in stops the voice right away: clear() drops whatever hasn't been sent yet.
     """
 
-    def __init__(self, sink, rate=ZOOM_RATE):
+    def __init__(self, sink, rate=BRIDGE_RATE):
         self.sink = sink                 # async callable(bytes)
         self.rate = rate
         self._frame_bytes = rate * FRAME_MS // 1000 * 2
