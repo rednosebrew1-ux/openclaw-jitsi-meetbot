@@ -6,6 +6,9 @@ Talk with your AI on Zoom, in both directions:
   joins it, and sends you the link (and a push notification, if you set one up). Tap it and talk.
 - **You call it.** Say "join my Zoom", or give it a meeting link. The bot joins and talks with you.
 
+- **Or leave it on.** Give it one always-on meeting link: the bot waits in that meeting all the time,
+  and you just join whenever you want to talk.
+
 The bot thinks with your [OpenClaw](https://openclaw.ai) agent through the Gateway's
 OpenAI-compatible endpoint. Everything that agent can reach (your other agents, tools and
 channels) is available on the call. Any other OpenAI-compatible model works too, such as Ollama.
@@ -96,6 +99,24 @@ chmod 600 ~/.config/openclaw-zoom-bot/skill.env
 
 Now tell your agent "call me on Zoom" or "join my Zoom".
 
+### Optional: an always-on meeting link
+
+Set `ALWAYS_ON_MEETING_URL` to a meeting link that doesn't change, such as your personal meeting
+link or a recurring meeting with no fixed time. In that meeting's settings, turn on **Allow
+participants to join before host** and turn off the **waiting room**.
+
+The bot then sits in that meeting whenever it isn't on another call:
+
+- Join the link any time: it says hello. Leave: it stays and waits for the next time.
+- Each visit is its own conversation, with its own transcript.
+- "Call me" sends you this same link instead of making a new meeting.
+- If it's asked to join a different meeting, it steps out and comes back afterwards.
+- If Zoom ends the meeting, it rejoins within seconds. Free Zoom accounts end meetings after
+  40 minutes, so a long conversation gets cut off there; paid accounts allow up to 30 hours.
+
+Keep the link private: anyone who has it can talk to your agent, and through it use your tools.
+Without the Zoom API settings, Zoom asks you to allow recording each time you join.
+
 ### Optional: a push notification when it calls
 
 Install the free [ntfy](https://ntfy.sh) app, subscribe to a long random topic name, and set
@@ -129,7 +150,7 @@ All endpoints need `Authorization: Bearer <API_TOKEN>`.
 | `POST /api/join` `{"link": "..."}` | The AI joins a meeting (your personal meeting if no link). |
 | `GET /api/calls/{id}?wait=1` | Wait for the call to end; returns `status` and `transcript`. |
 | `POST /api/calls/{id}/hangup` | Make the AI leave. |
-| `GET /api/status` | Whether the bridge is connected and a call is going. |
+| `GET /api/status` | Whether the bridge is connected, a call is going, and the always-on link. |
 
 ## Limits
 

@@ -64,6 +64,7 @@ class Env:
         cfg.auto_join_meetings = ""
         cfg.notify_url = ""
         cfg.zoom_obf_token = ""
+        cfg.always_on_meeting_url = ""
         if zoom_api:
             runner, zoom_base = await serve(fake_zoom_api_app(self.zoom_log))
             self.runners.append(runner)
@@ -463,3 +464,127 @@ def test_auto_join_list():
     cfg = Settings()
     cfg.auto_join_meetings = "123 456 789:pw, 987654321 ,,"
     assert cfg.auto_join_list() == {"123456789": "pw", "987654321": ""}
+
+
+# ---- always-on meeting ----
+
+ALWAYS_ON = "https://zoom.us/j/5550001111?pwd=room"
+
+
+async def _always_on():
+    env = await Env().start(notify=True, always_on_meeting_url=ALWAYS_ON)
+    try:
+        # As soon as the bridge connects, the bot goes and waits in the always-on meeting.
+        bridge = await env.bridge()
+        assert await wait_for(lambda: bridge.commands_of("join"))
+        join = bridge.commands_of("join")[0]
+        assert (join["meeting_number"], join["passcode"]) == ("5550001111", "room")
+        bridge.start_audio()
+        await bridge.join_meeting(others=0)
+        await asyncio.sleep(0.3)
+        _, status = await env.get("/api/status")
+        assert status["always_on"] == {"join_url": ALWAYS_ON, "bot_in_meeting": True}
+        assert status["call"] is None and env.tts.spoken == []
+
+        # You drop in: it greets you. You leave: it stays.
+        await bridge.send(type="participants", others=1)
+        assert await wait_for(lambda: env.tts.spoken == [env.app.cfg.greeting])
+        first = env.app.call
+        assert first.kind == "standby" and first.info()["always_on"] is True
+        await bridge.send(type="participants", others=0)
+        assert await wait_for(lambda: first.finished)
+        assert first.status == "completed" and env.app.call is None
+        await asyncio.sleep(0.3)
+        assert not bridge.commands_of("leave")
+
+        # You drop in again later: a fresh conversation.
+        await bridge.send(type="participants", others=1)
+        assert await wait_for(lambda: env.tts.spoken.count(env.app.cfg.greeting) == 2)
+        second = env.app.call
+        assert second is not first and second.conversation.history[0]["content"] == env.app.cfg.greeting
+        await bridge.send(type="participants", others=0)
+        assert await wait_for(lambda: second.finished)
+
+        # "Call me" sends the always-on link instead of making a meeting.
+        status, call = await env.post("/api/call", {"reason": "The build finished."})
+        assert status == 200 and call["join_url"] == ALWAYS_ON and call["status"] == "waiting"
+        assert len(bridge.commands_of("join")) == 1
+        assert await wait_for(lambda: env.notify_log and env.notify_log[0]["click"] == ALWAYS_ON)
+        await bridge.send(type="participants", others=1)
+        assert await wait_for(lambda: env.llm_requests)
+        assert "The build finished." in env.llm_requests[0]["messages"][0]["content"]
+        # The reply ends with <hangup/>: the conversation ends but the bot stays in the room,
+        # and it doesn't start talking again while you're still there.
+        _, done = await env.get(f"/api/calls/{call['id']}?wait=1&timeout=10")
+        assert done["status"] == "completed" and "build finished" in done["transcript"][0]["text"]
+        await asyncio.sleep(0.5)
+        assert env.app.call is None and not bridge.commands_of("leave")
+        await bridge.send(type="participants", others=0)
+        await bridge.send(type="participants", others=1)
+        assert await wait_for(lambda: env.app.call is not None and env.app.call.kind == "standby")
+    finally:
+        await env.stop()
+
+
+def test_always_on():
+    run(_always_on())
+
+
+async def _always_on_rejoins():
+    env = await Env().start(always_on_meeting_url=ALWAYS_ON)
+    try:
+        bridge = await env.bridge()
+        assert await wait_for(lambda: bridge.commands_of("join"))
+        await bridge.join_meeting(others=0)
+        # Zoom ends the meeting (a time limit, or the host ended it). The bridge exits and restarts...
+        await bridge.send(type="ended", failed=False, reason="the meeting ended")
+        await bridge.close()
+        # ...and the bot goes straight back.
+        bridge = await env.bridge()
+        assert await wait_for(lambda: bridge.commands_of("join"))
+        assert bridge.commands_of("join")[0]["meeting_number"] == "5550001111"
+        assert env.app.standby_failures == 0
+    finally:
+        await env.stop()
+
+
+def test_always_on_rejoins():
+    run(_always_on_rejoins())
+
+
+async def _always_on_steps_out_for_another_meeting():
+    env = await Env().start(always_on_meeting_url=ALWAYS_ON)
+    try:
+        bridge = await env.bridge()
+        assert await wait_for(lambda: bridge.commands_of("join"))
+        await bridge.join_meeting(others=0)
+
+        # Asked to join a different meeting: it leaves the room first...
+        status, call = await env.post("/api/join", {"link": "https://zoom.us/j/9998887777?pwd=x"})
+        assert status == 200 and call["status"] == "joining" and call["always_on"] is False
+        assert await wait_for(lambda: bridge.commands_of("leave"))
+        assert len(bridge.commands_of("join")) == 1
+        await bridge.close()  # the bridge restarts after leaving
+
+        # ...joins the other meeting once the bridge is back...
+        bridge = await env.bridge()
+        assert await wait_for(lambda: bridge.commands_of("join"))
+        assert bridge.commands_of("join")[0]["meeting_number"] == "9998887777"
+        await bridge.join_meeting(others=1)
+        assert await wait_for(lambda: env.app.cfg.greeting in env.tts.spoken)
+        await bridge.send(type="participants", others=0)
+        assert await wait_for(lambda: bridge.commands_of("leave"))
+        _, done = await env.get(f"/api/calls/{call['id']}")
+        assert done["status"] == "completed"
+        await bridge.close()
+
+        # ...and goes back to the always-on room afterwards.
+        bridge = await env.bridge()
+        assert await wait_for(lambda: bridge.commands_of("join"))
+        assert bridge.commands_of("join")[0]["meeting_number"] == "5550001111"
+    finally:
+        await env.stop()
+
+
+def test_always_on_steps_out_for_another_meeting():
+    run(_always_on_steps_out_for_another_meeting())

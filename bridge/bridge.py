@@ -228,8 +228,13 @@ class ZoomBot:
         ids = list(self.participants_ctrl.GetParticipantsList() or [])
         others = len([i for i in ids if i != self.my_id])
         if others != self._others:
+            arrived = self._others is not None and others > self._others
             self._others = others
             self.emit({"type": "participants", "others": others})
+            if arrived and not self.recording and self.recording_ctrl is not None:
+                # In an always-on meeting the bot joins alone, so there may have been no host to ask:
+                # ask again now that someone is here.
+                self.start_listening()
 
     def start_listening(self):
         """Hear the meeting. Without a recording token, the host is asked to allow it."""

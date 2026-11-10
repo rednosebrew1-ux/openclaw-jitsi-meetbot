@@ -35,6 +35,12 @@ the meeting. **Send the user the `join_url` in this chat** so they can tap it an
 {baseDir}/scripts/zoom.sh wait ID
 ```
 
+## Always-on link
+
+If the server has an always-on meeting, the bot is always waiting there and the user can just
+join it. `zoom.sh status` shows it as `always_on.join_url`; give the user that link if they ask
+for it. `zoom.sh call` sends that same link. Each visit to the always-on meeting is its own call.
+
 ## Join the user's meeting
 
 ```bash

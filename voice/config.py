@@ -95,6 +95,9 @@ class Settings:
     # Zoom: the meeting the bot uses when there's no Zoom API access, or when you say "join my meeting".
     # Paste your personal meeting link (it includes the passcode).
     personal_meeting_url: str = field(default_factory=lambda: _env("PERSONAL_MEETING_URL"))
+    # Always-on: the bot stays in this meeting all the time; join it whenever you want to talk.
+    # "Call me" sends you this link instead of making a new meeting.
+    always_on_meeting_url: str = field(default_factory=lambda: _env("ALWAYS_ON_MEETING_URL"))
     # Optional Server-to-Server OAuth app: lets the bot create a fresh meeting for every call and
     # listen without asking the host for recording permission.
     zoom_account_id: str = field(default_factory=lambda: _env("ZOOM_ACCOUNT_ID"))

@@ -19,25 +19,41 @@ log = logging.getLogger(__name__)
 KEEP_CALLS = 50
 
 
+class Meeting:
+    """The meeting the bridge is in (or joining). In always-on mode it outlives many calls."""
+
+    def __init__(self, number, passcode, join_url="", standby=False, obf_token=""):
+        self.number, self.passcode, self.join_url = number, passcode, join_url
+        self.standby = standby              # the always-on meeting: the bot stays when people leave
+        self.obf_token = obf_token
+        self.in_meeting = False
+        self.mic_ready = False
+        self.hearing = False                # Zoom lets the bot hear the meeting
+        self.others = 0                     # people in the meeting besides the bot
+        self.leaving = False
+        # In always-on mode, a new call starts when someone arrives. After a call ends while people
+        # are still there (the AI said goodbye), wait until the room empties before starting another.
+        self.call_blocked = False
+
+
 class Call:
-    """One Zoom call, from "join" to the bot leaving."""
+    """One conversation in a Zoom meeting, from the bot joining (or someone arriving) to the end."""
 
     GREET_DELAY = 1.5  # seconds after someone joins, so their audio is connected before we talk
 
-    def __init__(self, app, kind, number, passcode, join_url="", reason=None):
+    def __init__(self, app, kind, meeting, reason=None):
         self.app = app
         self.id = secrets.token_hex(6)
-        self.kind = kind                    # "ai_call" (the AI called you) or "join" (you called it)
-        self.number, self.passcode, self.join_url = number, passcode, join_url
+        self.kind = kind                    # "ai_call" (the AI called you), "join" (you called it),
+                                            # or "standby" (you joined the always-on meeting)
+        self.meeting = meeting
         self.reason = reason
-        self.status = "joining"             # joining, waiting, in_call, completed, missed, failed
+        self.status = "waiting" if meeting.in_meeting else "joining"
         self.error = None
         self.created = time.time()
         self.ended_at = None
         self.done = asyncio.Event()
-        self.present = False                # someone other than the bot is in the meeting
-        self.mic_ready = False
-        self.hearing = False                # Zoom lets the bot hear the meeting
+        self.present = meeting.in_meeting and meeting.others > 0
         self.greeted = False
         self.asked_permission = False
         self._timer = None
@@ -48,11 +64,19 @@ class Call:
         self.conversation = Conversation(cfg, app.stt, app.tts, self.speaker, self.id,
                                          reason=reason, on_hangup=self.hang_up)
 
+    @property
+    def number(self):
+        return self.meeting.number
+
+    @property
+    def join_url(self):
+        return self.meeting.join_url
+
     def info(self):
         return {
             "id": self.id, "kind": self.kind, "status": self.status, "meeting": self.number,
-            "join_url": self.join_url, "reason": self.reason, "error": self.error,
-            "transcript": self.conversation.transcript,
+            "join_url": self.join_url, "always_on": self.meeting.standby, "reason": self.reason,
+            "error": self.error, "transcript": self.conversation.transcript,
             "duration": round((self.ended_at or time.time()) - self.created, 1),
         }
 
@@ -61,42 +85,36 @@ class Call:
         return self.done.is_set()
 
     def start_timer(self):
+        if self.present:
+            return
         self._timer = asyncio.get_running_loop().call_later(
             self.app.cfg.join_timeout, lambda: asyncio.ensure_future(self._nobody_came()))
 
     async def _nobody_came(self):
         if not self.present and not self.finished:
-            log.info("[%s] nobody joined within %.0fs; leaving", self.id, self.app.cfg.join_timeout)
+            log.info("[%s] nobody joined within %.0fs", self.id, self.app.cfg.join_timeout)
             await self.finish("missed", leave=True)
 
     async def hang_up(self):
         log.info("[%s] hanging up", self.id)
         await self.finish("completed", leave=True)
 
-    # ---- events from the bridge ----
+    # ---- events from the bridge (the meeting's state is already updated) ----
 
     async def on_event(self, event):
         kind = event.get("type")
         if kind == "status":
-            status = event.get("status")
-            log.info("[%s] zoom: %s", self.id, status)
-            if status == "in_meeting" and self.status == "joining":
+            if event.get("status") == "in_meeting" and self.status == "joining":
                 self.status = "waiting"
-        elif kind == "mic_ready":
-            self.mic_ready = True
-        elif kind == "recording":
-            self.hearing = bool(event.get("allowed"))
-            log.info("[%s] %s hear the meeting", self.id, "can" if self.hearing else "can't")
         elif kind == "participants":
-            others = int(event.get("others") or 0)
+            others = self.meeting.others
             if others == 0 and self.present:
                 log.info("[%s] everyone else left", self.id)
-                await self.finish("completed", leave=True)
+                await self.finish("completed" if self.greeted else "missed", leave=True)
                 return
             self.present = others > 0
         elif kind == "ended":
             reason = event.get("reason") or "ended"
-            log.info("[%s] bot left the meeting (%s)", self.id, reason)
             failed = event.get("failed")
             if failed:
                 self.error = reason
@@ -104,13 +122,13 @@ class Call:
             return
         elif kind == "error":
             self.error = event.get("message")
-            log.warning("[%s] bridge error: %s", self.id, self.error)
-        self._maybe_greet()
+        self.maybe_greet()
 
-    def _maybe_greet(self):
-        if self.finished or self.greeted or not (self.present and self.mic_ready):
+    def maybe_greet(self):
+        m = self.meeting
+        if self.finished or self.greeted or not (self.present and m.mic_ready):
             return
-        if self.hearing:
+        if m.hearing:
             if not self._greet_task:
                 self._greet_task = asyncio.ensure_future(self._greet())
         elif not self.asked_permission:
@@ -131,6 +149,7 @@ class Call:
     # ---- the end ----
 
     async def finish(self, status, leave=False):
+        """End this conversation. `leave` makes the bot leave too, except in the always-on meeting."""
         if self.finished:
             return
         self.status = status
@@ -141,8 +160,10 @@ class Call:
             self._greet_task.cancel()
         self.done.set()
         await self.conversation.close()
-        if leave:
-            await self.app.send_bridge({"type": "leave"})
+        if self.meeting.standby:
+            self.meeting.call_blocked = self.meeting.others > 0
+        elif leave:
+            await self.app.leave_meeting(self.meeting)
         self.app.call_finished(self)
         log.info("[%s] call %s after %.0fs", self.id, status, self.ended_at - self.created)
 
@@ -152,11 +173,22 @@ class ZoomBotApp:
         self.cfg, self.stt, self.tts = cfg, stt, tts
         self.zoom = ZoomAPI(cfg) if cfg.zoom_api_enabled else None
         self.bridge = None          # the bridge's WebSocket
+        self.meeting = None         # the meeting the bridge is in or joining
         self.call = None            # the active call, if any
+        self.pending = None         # a call waiting for the bridge to restart before it can join
         self.calls = {}             # recent calls by id
+        self.standby_failures = 0
         self._tasks = set()
+        self.standby = None
+        if cfg.always_on_meeting_url:
+            number, passcode = parse_meeting(cfg.always_on_meeting_url)
+            self.standby = (number, passcode, cfg.always_on_meeting_url)
 
     # ---- bridge link ----
+
+    @property
+    def bridge_connected(self):
+        return self.bridge is not None and not self.bridge.closed
 
     async def send_bridge(self, message):
         ws = self.bridge
@@ -174,7 +206,7 @@ class ZoomBotApp:
     async def bridge_ws(self, request):
         if not self._authorized(request):
             raise web.HTTPUnauthorized()
-        if self.bridge is not None and not self.bridge.closed:
+        if self.bridge_connected:
             raise web.HTTPConflict(text="another bridge is already connected")
         ws = web.WebSocketResponse(heartbeat=20, max_msg_size=4 * 1024 * 1024)
         await ws.prepare(request)
@@ -183,51 +215,145 @@ class ZoomBotApp:
         try:
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.BINARY:
-                    if self.call is not None:
+                    if self.call is not None and self.call.meeting is self.meeting:
                         self.call.on_audio(msg.data)
                 elif msg.type == aiohttp.WSMsgType.TEXT:
                     try:
                         event = json.loads(msg.data)
                     except json.JSONDecodeError:
                         continue
-                    if self.call is not None:
-                        await self.call.on_event(event)
+                    if event.get("type") == "hello":
+                        self._spawn(self._bridge_ready())
+                    else:
+                        await self._on_meeting_event(event)
         finally:
             if self.bridge is ws:
                 self.bridge = None
             log.info("Zoom bridge disconnected")
-            if self.call is not None:
-                self.call.error = self.call.error or "the Zoom bridge disconnected"
-                await self.call.finish("completed" if self.call.greeted else "failed")
+            self.meeting = None
+            call = self.call
+            if call is not None and call is not self.pending:
+                call.error = call.error or "the Zoom bridge disconnected"
+                await call.finish("completed" if call.greeted else "failed")
         return ws
+
+    async def _on_meeting_event(self, event):
+        m = self.meeting
+        if m is None:
+            return
+        kind = event.get("type")
+        if kind == "status":
+            log.info("zoom: %s", event.get("status"))
+            if event.get("status") == "in_meeting":
+                m.in_meeting = True
+                if m.standby:
+                    self.standby_failures = 0
+                    log.info("in the always-on meeting %s; join it any time to talk", m.number)
+        elif kind == "mic_ready":
+            m.mic_ready = True
+        elif kind == "recording":
+            m.hearing = bool(event.get("allowed"))
+            log.info("%s hear the meeting", "can" if m.hearing else "can't")
+        elif kind == "participants":
+            m.others = int(event.get("others") or 0)
+            if m.others == 0:
+                m.call_blocked = False
+        elif kind == "ended":
+            log.info("bot left the meeting (%s)", event.get("reason") or "ended")
+            if m.standby and (event.get("failed") or not m.in_meeting):
+                self.standby_failures += 1
+            self.meeting = None
+        elif kind == "error":
+            log.warning("bridge error: %s", event.get("message"))
+
+        call = self.call
+        if call is not None and call.meeting is m:
+            await call.on_event(event)
+        if (m.standby and self.meeting is m and self.call is None and m.in_meeting
+                and m.others > 0 and not m.call_blocked):
+            # Someone joined the always-on meeting: start a conversation.
+            log.info("someone joined the always-on meeting")
+            self._new_call("standby", m).maybe_greet()
+
+    async def _bridge_ready(self):
+        """The bridge (re)connected and is idle: send any waiting call, or go back to the always-on meeting."""
+        if self.pending is not None:
+            call, self.pending = self.pending, None
+            if not call.finished:
+                await self._send_join(call.meeting)
+            return
+        if not self.standby or self.meeting is not None or self.call is not None:
+            return
+        if self.standby_failures:
+            delay = min(300, 5 * 2 ** (self.standby_failures - 1))
+            log.info("rejoining the always-on meeting in %ss", delay)
+            await asyncio.sleep(delay)
+            if self.meeting is not None or self.call is not None or not self.bridge_connected:
+                return
+        number, passcode, url = self.standby
+        await self._send_join(Meeting(number, passcode, url, standby=True))
+
+    async def _send_join(self, meeting):
+        token = await self.zoom.recording_token(meeting.number) if self.zoom else None
+        self.meeting = meeting
+        await self.send_bridge({
+            "type": "join", "meeting_number": meeting.number, "passcode": meeting.passcode,
+            "display_name": self.cfg.ai_name, "recording_token": token or "",
+            "obf_token": meeting.obf_token or self.cfg.zoom_obf_token,
+        })
+        log.info("joining meeting %s%s", meeting.number, " (always on)" if meeting.standby else "")
+
+    async def leave_meeting(self, meeting):
+        if self.meeting is meeting and not meeting.leaving:
+            meeting.leaving = True
+            await self.send_bridge({"type": "leave"})
 
     # ---- starting calls ----
 
     def call_finished(self, call):
         if self.call is call:
             self.call = None
+        if self.pending is call:
+            self.pending = None
 
-    async def start_call(self, kind, number, passcode, join_url="", reason=None, obf_token=""):
-        """Send the bot into a meeting. Raises web.HTTPException if it can't."""
-        if self.bridge is None or self.bridge.closed:
-            raise web.HTTPServiceUnavailable(text=json.dumps({"error": "the Zoom bridge isn't connected"}),
-                                             content_type="application/json")
-        if self.call is not None:
-            raise web.HTTPConflict(text=json.dumps({"error": "already on a call", "call": self.call.id}),
-                                   content_type="application/json")
-        call = Call(self, kind, number, passcode, join_url, reason)
+    def _new_call(self, kind, meeting, reason=None):
+        call = Call(self, kind, meeting, reason)
         self.call = call
         self.calls[call.id] = call
         while len(self.calls) > KEEP_CALLS:
             self.calls.pop(next(iter(self.calls)))
-        token = await self.zoom.recording_token(number) if self.zoom else None
+        return call
+
+    def _busy(self):
+        return web.HTTPConflict(text=json.dumps({"error": "already on a call", "call": self.call.id}),
+                                content_type="application/json")
+
+    async def start_call(self, kind, number, passcode, join_url="", reason=None, obf_token=""):
+        """Start a call in a meeting. Raises web.HTTPException if it can't."""
+        if self.call is not None:
+            raise self._busy()
+        m = self.meeting
+        if m is not None and m.standby and not m.leaving and number == m.number:
+            # The bot is already in the always-on meeting: use it.
+            call = self._new_call(kind, m, reason)
+            call.start_timer()
+            call.maybe_greet()
+            return call
+        if not self.bridge_connected:
+            raise web.HTTPServiceUnavailable(text=json.dumps({"error": "the Zoom bridge isn't connected"}),
+                                             content_type="application/json")
+        standby = bool(self.standby) and number == self.standby[0]
+        meeting = Meeting(number, passcode, join_url or (self.standby[2] if standby else ""),
+                          standby=standby, obf_token=obf_token)
+        call = self._new_call(kind, meeting, reason)
         call.start_timer()
-        await self.send_bridge({
-            "type": "join", "meeting_number": number, "passcode": passcode,
-            "display_name": self.cfg.ai_name, "recording_token": token or "",
-            "obf_token": obf_token or self.cfg.zoom_obf_token,
-        })
-        log.info("[%s] joining meeting %s (%s)", call.id, number, kind)
+        if m is None:
+            await self._send_join(meeting)
+        else:
+            # The bridge handles one meeting per run: leave this one; the call joins when it's back.
+            self.pending = call
+            await self.leave_meeting(m)
+            log.info("[%s] leaving meeting %s first", call.id, m.number)
         return call
 
     def _personal_meeting(self):
@@ -241,7 +367,9 @@ class ZoomBotApp:
         self._require_auth(request)
         body = await self._json(request)
         reason = (body.get("reason") or "").strip() or None
-        if self.zoom:
+        if self.standby:
+            number, passcode, join_url = self.standby
+        elif self.zoom:
             try:
                 meeting = await self.zoom.create_meeting(body.get("topic") or f"Call from {self.cfg.ai_name}")
             except (ZoomError, aiohttp.ClientError) as e:
@@ -331,10 +459,13 @@ class ZoomBotApp:
             "call": self.call.info() if self.call else None,
             "zoom_api": self.zoom is not None,
             "personal_meeting": bool(self.cfg.personal_meeting_url),
+            "always_on": {"join_url": self.standby[2],
+                          "bot_in_meeting": bool(self.meeting and self.meeting.standby and self.meeting.in_meeting)}
+            if self.standby else None,
         })
 
     async def healthz(self, request):
-        return web.json_response({"ok": True, "bridge_connected": self.bridge is not None and not self.bridge.closed})
+        return web.json_response({"ok": True, "bridge_connected": self.bridge_connected})
 
     # ---- Zoom webhook (optional): join when one of your meetings starts ----
 
@@ -405,6 +536,8 @@ class ZoomBotApp:
     async def on_shutdown(self, app):
         if self.call is not None:
             await self.call.finish("completed" if self.call.greeted else "missed", leave=True)
+        if self.meeting is not None:
+            await self.leave_meeting(self.meeting)
         if self.bridge is not None:
             await self.bridge.close()
 

@@ -248,3 +248,19 @@ def test_passes_the_on_behalf_token():
     h.login()
     h.bot.handle(dict(JOIN, obf_token="obf-token"))
     assert h.zoom.join_param.param.onBehalfToken == "obf-token"
+
+
+def test_asks_again_when_someone_arrives():
+    # Joined the always-on meeting alone, without permission to listen; then someone arrives.
+    h = Harness(can_record=False)
+    h.login()
+    h.bot.handle(JOIN)
+    h.enter_meeting()
+    assert len(h.called("recording", "RequestLocalRecordingPrivilege")) == 1
+    h.zoom.state["participants"] = [1, 7]
+    h.zoom.events["participants"].onUserJoinCallback([7], "")
+    assert len(h.called("recording", "RequestLocalRecordingPrivilege")) == 2
+    # Leaving doesn't ask again.
+    h.zoom.state["participants"] = [1]
+    h.zoom.events["participants"].onUserLeftCallback([7], "")
+    assert len(h.called("recording", "RequestLocalRecordingPrivilege")) == 2
